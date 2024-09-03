@@ -1,92 +1,122 @@
+#include <CGAL/Simple_cartesian.h>
 #include <CGAL/Exact_predicates_inexact_constructions_kernel.h>
-#include <CGAL/Exact_predicates_exact_constructions_kernel.h>
 #include <CGAL/Surface_mesh.h>
-#include <CGAL/Polygon_mesh_processing/corefinement.h>
-#include <CGAL/Polygon_mesh_processing/IO/polygon_mesh_io.h>
+#include <CGAL/Polygon_mesh_processing/intersection.h>
+#include <CGAL/IO/PLY.h>
+#include <vector>
+#include <fstream>
 #include <iostream>
-#include <string>
+#include <unordered_set>
 typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
-typedef CGAL::Exact_predicates_exact_constructions_kernel EK;
-typedef CGAL::Surface_mesh<K::Point_3> Mesh;
-typedef boost::graph_traits<Mesh>::vertex_descriptor vertex_descriptor;
-typedef Mesh::Property_map<vertex_descriptor,EK::Point_3> Exact_point_map;
+typedef K::Point_3 Point_3;
+typedef K::Segment_3 Segment_3;
+typedef K::Triangle_3 Triangle_3;
+typedef CGAL::Surface_mesh<Point_3> Mesh;
 namespace PMP = CGAL::Polygon_mesh_processing;
-namespace params = CGAL::parameters;
-struct Exact_vertex_point_map
-{
-  // typedef for the property map
-  typedef boost::property_traits<Exact_point_map>::value_type value_type;
-  typedef boost::property_traits<Exact_point_map>::reference reference;
-  typedef boost::property_traits<Exact_point_map>::key_type key_type;
-  typedef boost::read_write_property_map_tag category;
-  // exterior references
-  Exact_point_map exact_point_map;
-  Mesh* tm_ptr;
-  // Converters
-  CGAL::Cartesian_converter<K, EK> to_exact;
-  CGAL::Cartesian_converter<EK, K> to_input;
-  Exact_vertex_point_map()
-    : tm_ptr(nullptr)
-  {}
-  Exact_vertex_point_map(const Exact_point_map& ep, Mesh& tm)
-    : exact_point_map(ep)
-    , tm_ptr(&tm)
-  {
-    for (Mesh::Vertex_index v : vertices(tm))
-      exact_point_map[v]=to_exact(tm.point(v));
-  }
-  friend
-  reference get(const Exact_vertex_point_map& map, key_type k)
-  {
-    CGAL_precondition(map.tm_ptr!=nullptr);
-    return map.exact_point_map[k];
-  }
-  friend
-  void put(const Exact_vertex_point_map& map, key_type k, const EK::Point_3& p)
-  {
-    CGAL_precondition(map.tm_ptr!=nullptr);
-    map.exact_point_map[k]=p;
-    // create the input point from the exact one
-    map.tm_ptr->point(k)=map.to_input(p);
-  }
-};
-int main(int argc, char* argv[])
-{
-  const std::string filename1 = (argc > 1) ? argv[1] : CGAL::data_file_path("meshes/blobby.off");
-  const std::string filename2 = (argc > 2) ? argv[2] : CGAL::data_file_path("meshes/eight.off");
-  Mesh mesh1, mesh2;
-  if(!PMP::IO::read_polygon_mesh(filename1, mesh1) || !PMP::IO::read_polygon_mesh(filename2, mesh2))
-  {
-    std::cerr << "Invalid input." << std::endl;
-    return 1;
-  }
-  Exact_point_map mesh1_exact_points =
-    mesh1.add_property_map<vertex_descriptor,EK::Point_3>("v:exact_point").first;
-  Exact_point_map mesh2_exact_points =
-    mesh2.add_property_map<vertex_descriptor,EK::Point_3>("v:exact_point").first;
-  Exact_vertex_point_map mesh1_vpm(mesh1_exact_points, mesh1);
-  Exact_vertex_point_map mesh2_vpm(mesh2_exact_points, mesh2);
-  if ( PMP::corefine_and_compute_intersection(mesh1,
-                                              mesh2,
-                                              mesh1,
-                                              params::vertex_point_map(mesh1_vpm),
-                                              params::vertex_point_map(mesh2_vpm),
-                                              params::vertex_point_map(mesh1_vpm) ) )
-  {
-    if ( PMP::corefine_and_compute_union(mesh1,
-                                         mesh2,
-                                         mesh2,
-                                         params::vertex_point_map(mesh1_vpm),
-                                         params::vertex_point_map(mesh2_vpm),
-                                         params::vertex_point_map(mesh2_vpm) ) )
-    {
-      std::cout << "Intersection and union were successfully computed\n";
-      CGAL::IO::write_polygon_mesh("inter_union.off", mesh2, CGAL::parameters::stream_precision(17));
-      return 0;
+
+int main(int argc, char* argv[]) {
+    const std::string filename1 = (argc > 1) ? argv[1] : R"(D:\Code\Data\Plane.ply)";
+    const std::string filename2 = (argc > 2) ? argv[2] : R"(D:\Code\Data\Plane2.ply)";
+    const std::string output_filename = (argc > 3) ? argv[3] : R"(D:\Code\Data\intersection.ply)";
+    // 读取第一个PLY文件
+    Mesh mesh1;
+    std::ifstream input1(filename1, std::ios::binary);
+    if (!input1 || !CGAL::IO::read_PLY(input1, mesh1)) {
+        std::cerr << "Cannot read file " << filename1 << std::endl;
+        return EXIT_FAILURE;
     }
-    std::cout << "Union could not be computed\n";
-    return 1;
-  }
-  std::cout << "Intersection could not be computed\n";
-  return 1;
+
+    // 读取第二个PLY文件
+    Mesh mesh2;
+    std::ifstream input2(filename2, std::ios::binary);
+    if (!input2 || !CGAL::IO::read_PLY(input2, mesh2)) {
+        std::cerr << "Cannot read file " << filename2 << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    std::unordered_set<Point_3> S;
+    std::vector<Segment_3> intersection_segments;
+
+    // 遍历第一个网格的所有面
+    for (auto face1 : mesh1.faces()) {
+        std::vector<Point_3> points1;
+        for (auto v : CGAL::vertices_around_face(mesh1.halfedge(face1), mesh1)) {
+            points1.push_back(mesh1.point(v));
+        }
+//        for(auto &p : points1) {
+//            std::cout << p << "\n";
+//        }
+        Triangle_3 tri1(points1[0], points1[1], points1[2]);
+
+        // 遍历第二个网格的所有面
+        for (auto face2 : mesh2.faces()) {
+            std::vector<Point_3> points2;
+            for (auto v : CGAL::vertices_around_face(mesh2.halfedge(face2), mesh2)) {
+                points2.push_back(mesh2.point(v));
+            }
+//            for(auto &p : points2) {
+//                std::cout << p << "\n";
+//            }
+            Triangle_3 tri2(points2[0], points2[1], points2[2]);
+
+            // 计算两个三角形的相交结果
+            auto result = CGAL::intersection(tri1, tri2);
+            if(result) {
+                if (const Segment_3* s = boost::get<Segment_3>(&*result)) {
+                    intersection_segments.push_back(*s);
+                } else if (const Point_3* p = boost::get<Point_3>(&*result)) {
+                    // 如果相交结果是一个点
+                    intersection_segments.emplace_back(*p, *p); // 将点处理为长度为零的线段
+                }
+            }
+
+        }
+    }
+
+    // 写入 PLY 文件
+    std::ofstream output(output_filename, std::ios::binary);
+    if (!output) {
+        std::cerr << "Cannot open file " << output_filename << " for writing." << std::endl;
+        return EXIT_FAILURE;
+    }
+
+    for(auto &seg : intersection_segments) {
+        S.insert(seg.source());
+        S.insert(seg.target());
+    }
+    // 写入 PLY 头
+    output << "ply\n";
+    output << "format ascii 1.0\n";
+    output << "element vertex " << S.size() << "\n";
+    output << "property float x\n";
+    output << "property float y\n";
+    output << "property float z\n";
+    output << "element edge " << intersection_segments.size() << "\n";
+    output << "property int vertex1\n";
+    output << "property int vertex2\n";
+    output << "end_header\n";
+
+    // 写入顶点
+    std::map<Point_3, int> vertex_map;
+    int vertex_index = 0;
+    for (const auto& seg : intersection_segments) {
+        if (vertex_map.find(seg.source()) == vertex_map.end()) {
+            vertex_map[seg.source()] = vertex_index++;
+            output << seg.source().x() << " " << seg.source().y() << " " << seg.source().z() << "\n";
+        }
+        if (vertex_map.find(seg.target()) == vertex_map.end()) {
+            vertex_map[seg.target()] = vertex_index++;
+            output << seg.target().x() << " " << seg.target().y() << " " << seg.target().z() << "\n";
+        }
+    }
+
+    // 写入边（线段）
+    for (const auto& seg : intersection_segments) {
+        output << vertex_map[seg.source()] << " " << vertex_map[seg.target()] << "\n";
+    }
+
+    output.close();
+    std::cout << "Intersection segments written to " << output_filename << std::endl;
+
+    return 0;
 }
