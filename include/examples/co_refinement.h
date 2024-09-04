@@ -33,7 +33,7 @@ inline void co_refinement(Mesh& mesh1, Mesh& mesh2, const std::string& output1, 
     std::cout << "Co-refinement completed." << std::endl;
 }
 
-inline void co_refinement_and_clip(Mesh& mesh1, Mesh& mesh2) {
+inline void co_refinement_and_clip(Mesh& mesh1, Mesh& mesh2, const std::string& output1, const std::string& output2) {
     // 进行共精细化操作
     PMP::corefine(mesh1, mesh2);
 
@@ -68,6 +68,8 @@ inline void co_refinement_and_clip(Mesh& mesh1, Mesh& mesh2) {
         CGAL::remove_face(f, mesh2);
     }
 
+    CGAL::IO::write_polygon_mesh(output1, mesh1, CGAL::parameters::stream_precision(17));
+    CGAL::IO::write_polygon_mesh(output2, mesh2, CGAL::parameters::stream_precision(17));
     std::cout << "Clipping completed, removed " << faces_to_remove.size() << " faces from mesh2." << std::endl;
 }
 

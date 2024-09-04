@@ -36,7 +36,7 @@ int main(int argc, char* argv[]) {
         return EXIT_FAILURE;
     }
 
-    co_refinement(mesh1, mesh2, output_filename1, output_filename2);
+    co_refinement_and_clip(mesh1, mesh2, output_filename1, output_filename2);
 
     return 0;
 }
