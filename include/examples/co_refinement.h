@@ -18,7 +18,7 @@ typedef Mesh::Face_index Face_index;
 
 namespace PMP = CGAL::Polygon_mesh_processing;
 
-void co_refinement(Mesh& mesh1, Mesh& mesh2) {
+inline void co_refinement(Mesh& mesh1, Mesh& mesh2) {
     // 检查输入网格是否是三角网格
     if (!CGAL::is_triangle_mesh(mesh1) || !CGAL::is_triangle_mesh(mesh2)) {
         std::cerr << "Error: Both meshes must be triangle meshes." << std::endl;
@@ -33,7 +33,7 @@ void co_refinement(Mesh& mesh1, Mesh& mesh2) {
     std::cout << "Co-refinement completed." << std::endl;
 }
 
-void co_refinement_and_clip(Mesh& mesh1, Mesh& mesh2) {
+inline void co_refinement_and_clip(Mesh& mesh1, Mesh& mesh2) {
     // 进行共精细化操作
     PMP::corefine(mesh1, mesh2);
 
@@ -45,7 +45,7 @@ void co_refinement_and_clip(Mesh& mesh1, Mesh& mesh2) {
 
     for (Face_index f : mesh2.faces()) {
         // 获取三角形的三个顶点
-        auto h = mesh2.halfedge(f);
+        const auto h = mesh2.halfedge(f);
         const K::Point_3& p1 = mesh2.point(mesh2.target(h));
         const K::Point_3& p2 = mesh2.point(mesh2.target(mesh2.next(h)));
         const K::Point_3& p3 = mesh2.point(mesh2.target(mesh2.next(mesh2.next(h))));
