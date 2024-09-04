@@ -18,18 +18,18 @@ typedef Mesh::Face_index Face_index;
 
 namespace PMP = CGAL::Polygon_mesh_processing;
 
-inline void co_refinement(Mesh& mesh1, Mesh& mesh2) {
+inline void co_refinement(Mesh& mesh1, Mesh& mesh2, const std::string& output1, const std::string& output2) {
     // 检查输入网格是否是三角网格
     if (!CGAL::is_triangle_mesh(mesh1) || !CGAL::is_triangle_mesh(mesh2)) {
         std::cerr << "Error: Both meshes must be triangle meshes." << std::endl;
         return;
     }
 
-    // 为mesh2 添加一个布尔属性，用于标记边是否是新增的
-    auto is_new_edge_map = mesh2.add_property_map<Edge_index, bool>("e:is_new", false).first;
     // 进行共精细化
     PMP::corefine(mesh1, mesh2);
 
+    CGAL::IO::write_polygon_mesh(output1, mesh1, CGAL::parameters::stream_precision(17));
+    CGAL::IO::write_polygon_mesh(output2, mesh2, CGAL::parameters::stream_precision(17));
     std::cout << "Co-refinement completed." << std::endl;
 }
 

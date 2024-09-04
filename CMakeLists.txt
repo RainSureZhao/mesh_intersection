@@ -11,7 +11,11 @@ SET(CGAL_DO_NOT_WARN_ABOUT_CMAKE_BUILD_TYPE TRUE)
 # 添加编译器标志
 if(MSVC)
     add_compile_options(/bigobj)
+elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    # 添加针对 Clang 编译器的编译选项
+    # add_compile_options(-Wa,-mbig-obj)
 else()
+    # 对于其他编译器，也可以在这里添加相应的编译选项
     add_compile_options(-Wa,-mbig-obj)
 endif()
 
@@ -23,4 +27,5 @@ file(GLOB EXAMPLES "include/examples/*.h")
 
 add_executable(mesh_intersection main.cpp ${EXAMPLES})
 
+target_include_directories(mesh_intersection PRIVATE include)
 target_link_libraries(${PROJECT_NAME} CGAL::CGAL)
