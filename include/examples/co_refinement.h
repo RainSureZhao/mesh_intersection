@@ -33,7 +33,7 @@ inline void co_refinement(Mesh& mesh1, Mesh& mesh2, const std::string& output1, 
     std::cout << "Co-refinement completed." << std::endl;
 }
 
-inline void co_refinement_and_clip(Mesh& mesh1, Mesh& mesh2, const std::string& output1, const std::string& output2) {
+inline std::vector<K::Point_3> co_refinement_and_clip(Mesh& mesh1, Mesh& mesh2, const std::string& output1, const std::string& output2) {
     // 进行共精细化操作
     PMP::corefine(mesh1, mesh2);
 
@@ -42,6 +42,8 @@ inline void co_refinement_and_clip(Mesh& mesh1, Mesh& mesh2, const std::string& 
 
     // 标记需要删除的面
     std::vector<Face_index> faces_to_remove;
+
+    std::vector<K::Point_3> points_in_boundary;
 
     for (Face_index f : mesh2.faces()) {
         // 获取三角形的三个顶点
@@ -60,6 +62,16 @@ inline void co_refinement_and_clip(Mesh& mesh1, Mesh& mesh2, const std::string& 
             (p2_inside_result == CGAL::ON_BOUNDED_SIDE || p2_inside_result == CGAL::ON_BOUNDARY) &&
             (p3_inside_result == CGAL::ON_BOUNDED_SIDE || p3_inside_result == CGAL::ON_BOUNDARY)) {
             faces_to_remove.push_back(f); // 如果全部点都在mesh1的内部或边界处，标记这个面
+        }
+
+        if (p1_inside_result == CGAL::ON_BOUNDARY) {
+            points_in_boundary.push_back(p1);
+        }
+        if (p2_inside_result == CGAL::ON_BOUNDARY) {
+            points_in_boundary.push_back(p2);
+        }
+        if (p3_inside_result == CGAL::ON_BOUNDARY) {
+            points_in_boundary.push_back(p3);
         }
     }
 
