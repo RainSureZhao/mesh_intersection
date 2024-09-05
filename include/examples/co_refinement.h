@@ -10,6 +10,7 @@
 #include <CGAL/Surface_mesh.h>
 #include <CGAL/Polygon_mesh_processing/corefinement.h>
 #include <iostream>
+#include <array>
 
 typedef CGAL::Exact_predicates_inexact_constructions_kernel K;
 typedef CGAL::Surface_mesh<K::Point_3> Mesh;
@@ -17,6 +18,19 @@ typedef Mesh::Edge_index Edge_index;
 typedef Mesh::Face_index Face_index;
 
 namespace PMP = CGAL::Polygon_mesh_processing;
+
+struct Point3D{
+    Point3D() = default;
+    Point3D(double x, double y, double z) : x(x), y(y), z(z) {}
+    double x, y, z;
+};
+
+struct Triangle3D {
+    Triangle3D() = default;
+    Triangle3D(const std::array<Point3D, 3>& points) : points(points) {}
+    Triangle3D(const Point3D& p1, const Point3D& p2, const Point3D& p3) : points({p1, p2, p3}) {}
+    std::array<Point3D, 3> points;
+};
 
 inline void co_refinement(Mesh& mesh1, Mesh& mesh2, const std::string& output1, const std::string& output2) {
     // 检查输入网格是否是三角网格
@@ -33,7 +47,7 @@ inline void co_refinement(Mesh& mesh1, Mesh& mesh2, const std::string& output1, 
     std::cout << "Co-refinement completed." << std::endl;
 }
 
-inline std::vector<K::Point_3> co_refinement_and_clip(Mesh& mesh1, Mesh& mesh2, const std::string& output1, const std::string& output2) {
+inline std::vector<K::Point_3> co_refinement_and_clip(Mesh& mesh1, Mesh& mesh2, const std::string& output1 = "", const std::string& output2 = "") {
     // 进行共精细化操作
     PMP::corefine(mesh1, mesh2);
 
@@ -80,9 +94,58 @@ inline std::vector<K::Point_3> co_refinement_and_clip(Mesh& mesh1, Mesh& mesh2, 
         CGAL::remove_face(f, mesh2);
     }
 
-    CGAL::IO::write_polygon_mesh(output1, mesh1, CGAL::parameters::stream_precision(17));
-    CGAL::IO::write_polygon_mesh(output2, mesh2, CGAL::parameters::stream_precision(17));
+    if(!output1.empty()) CGAL::IO::write_polygon_mesh(output1, mesh1, CGAL::parameters::stream_precision(17));
+    if(!output2.empty()) CGAL::IO::write_polygon_mesh(output2, mesh2, CGAL::parameters::stream_precision(17));
     std::cout << "Clipping completed, removed " << faces_to_remove.size() << " faces from mesh2." << std::endl;
+
+    return points_in_boundary;
+}
+
+std::vector<Point3D> ClipMesh(std::vector<Triangle3D>& mesh1, std::vector<Triangle3D>& mesh2)
+{
+    // 将原始三角形构造成CGAL::Surface_Mesh
+    Mesh cgal_mesh1, cgal_mesh2;
+    for (const auto& triangle : mesh1) {
+        Mesh::Vertex_index v0 = cgal_mesh1.add_vertex(K::Point_3(triangle.points[0].x, triangle.points[0].y, triangle.points[0].z));
+        Mesh::Vertex_index v1 = cgal_mesh1.add_vertex(K::Point_3(triangle.points[1].x, triangle.points[1].y, triangle.points[1].z));
+        Mesh::Vertex_index v2 = cgal_mesh1.add_vertex(K::Point_3(triangle.points[2].x, triangle.points[2].y, triangle.points[2].z));
+        cgal_mesh1.add_face(v0, v1, v2);
+    }
+    for (const auto& triangle : mesh2) {
+        Mesh::Vertex_index v0 = cgal_mesh2.add_vertex(K::Point_3(triangle.points[0].x, triangle.points[0].y, triangle.points[0].z));
+        Mesh::Vertex_index v1 = cgal_mesh2.add_vertex(K::Point_3(triangle.points[1].x, triangle.points[1].y, triangle.points[1].z));
+        Mesh::Vertex_index v2 = cgal_mesh2.add_vertex(K::Point_3(triangle.points[2].x, triangle.points[2].y, triangle.points[2].z));
+        cgal_mesh2.add_face(v0, v1, v2);
+    }
+
+    // 进行共精细化和裁剪操作
+    auto boundary_points = co_refinement_and_clip(cgal_mesh1, cgal_mesh2);
+
+    // 将裁剪后的网格转换为三角形列表
+    std::vector<Point3D> result;
+    for (const auto& point : boundary_points) {
+        result.emplace_back(point.x(), point.y(), point.z());
+    }
+    // 修改mesh1和mesh2
+    mesh1.clear();
+    for (const auto& f : cgal_mesh1.faces()) {
+        auto h = cgal_mesh1.halfedge(f);
+        mesh1.emplace_back(
+                Point3D(cgal_mesh1.point(cgal_mesh1.target(h)).x(), cgal_mesh1.point(cgal_mesh1.target(h)).y(), cgal_mesh1.point(cgal_mesh1.target(h)).z()),
+                Point3D(cgal_mesh1.point(cgal_mesh1.target(cgal_mesh1.next(h))).x(), cgal_mesh1.point(cgal_mesh1.target(cgal_mesh1.next(h))).y(), cgal_mesh1.point(cgal_mesh1.target(cgal_mesh1.next(h))).z()),
+                Point3D(cgal_mesh1.point(cgal_mesh1.target(cgal_mesh1.next(cgal_mesh1.next(h)))).x(), cgal_mesh1.point(cgal_mesh1.target(cgal_mesh1.next(cgal_mesh1.next(h)))).y(), cgal_mesh1.point(cgal_mesh1.target(cgal_mesh1.next(cgal_mesh1.next(h)))).z())
+        );
+    }
+    mesh2.clear();
+    for (const auto& f : cgal_mesh2.faces()) {
+        auto h = cgal_mesh2.halfedge(f);
+        mesh2.emplace_back(
+                Point3D(cgal_mesh2.point(cgal_mesh2.target(h)).x(), cgal_mesh2.point(cgal_mesh2.target(h)).y(), cgal_mesh2.point(cgal_mesh2.target(h)).z()),
+                Point3D(cgal_mesh2.point(cgal_mesh2.target(cgal_mesh2.next(h))).x(), cgal_mesh2.point(cgal_mesh2.target(cgal_mesh2.next(h))).y(), cgal_mesh2.point(cgal_mesh2.target(cgal_mesh2.next(h))).z()),
+                Point3D(cgal_mesh2.point(cgal_mesh2.target(cgal_mesh2.next(cgal_mesh2.next(h)))).x(), cgal_mesh2.point(cgal_mesh2.target(cgal_mesh2.next(cgal_mesh2.next(h)))).y(), cgal_mesh2.point(cgal_mesh2.target(cgal_mesh2.next(cgal_mesh2.next(h)))).z())
+        );
+    }
+    return result;
 }
 
 #endif //MESH_INTERSECTION_CO_REFINEMENT_H

@@ -15,6 +15,39 @@ typedef K::Triangle_3 Triangle_3;
 typedef CGAL::Surface_mesh<Point_3> Mesh;
 namespace PMP = CGAL::Polygon_mesh_processing;
 
+/**
+ * input:
+ * mesh1
+ * point1: x, y, z
+ * point2: x, y, z
+ * point3: x, y, z
+ *
+ * mesh2
+ * point1: x, y, z
+ * point2: x, y, z
+ * point3: x, y, z
+ *
+ * output:
+ * mesh1:
+ * point1: x, y, z
+ * point2: x, y, z
+ * point3: x, y, z
+ *
+ * mesh2:
+ * point1: x, y, z
+ * point2: x, y, z
+ * point3: x, y, z
+ *
+ * boundary_points:
+ * point1: x, y, z
+ * point2: x, y, z
+ * point3: x, y, z
+ *
+ * @param argc
+ * @param argv
+ * @return
+ */
+
 int main(int argc, char* argv[]) {
     const std::string filename1 = (argc > 1) ? argv[1] : R"(../data/Cone.ply)";
     const std::string filename2 = (argc > 2) ? argv[2] : R"(../data/Plane.ply)";
