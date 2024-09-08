@@ -32,6 +32,88 @@ struct Triangle3D {
     std::array<Point3D, 3> points;
 };
 
+struct MeshData {
+    std::vector<Triangle3D> triangles;
+};
+
+bool ReadMeshData(const std::string& file_path, MeshData& mesh1, MeshData& mesh2) {
+    std::ifstream infile(file_path);
+    if (!infile.is_open()) {
+        std::cerr << "Error: Unable to open input file " << file_path << std::endl;
+        return false;
+    }
+
+    // Read the mesh data
+    std::string line;
+    std::vector<Point3D> points;
+    bool readingMesh1 = true;
+    while (std::getline(infile, line)) {
+        // 去掉前后的空格
+        line.erase(0, line.find_first_not_of(" \t"));
+        line.erase(line.find_last_not_of(" \t") + 1);
+
+        if (line == "mesh1") {
+            readingMesh1 = true;
+        } else if (line == "mesh2") {
+            readingMesh1 = false;
+        } else if (!line.empty()) {
+            // 直接读取 x, y, z
+            double x, y, z;
+            if (sscanf_s(line.c_str(), "%lf %lf %lf", &x, &y, &z) == 3) {
+                points.emplace_back(x, y, z);
+                if (points.size() == 3) {
+                    Triangle3D triangle(points[0], points[1], points[2]);
+                    if (readingMesh1) {
+                        mesh1.triangles.push_back(triangle);
+                    } else {
+                        mesh2.triangles.push_back(triangle);
+                    }
+                    points.clear();
+                }
+            } else {
+                std::cerr << "Error: Invalid format in line: " << line << std::endl;
+                return false;
+            }
+        }
+    }
+
+    infile.close();
+    return true;
+}
+
+
+void WriteMeshData(const std::string& file_path, const MeshData& mesh1, const MeshData& mesh2, const std::vector<Point3D>& boundary_points) {
+    std::ofstream outfile(file_path);
+    if (!outfile.is_open()) {
+        std::cerr << "Error: Unable to open output file " << file_path << std::endl;
+        return;
+    }
+
+    // Write mesh1
+    outfile << "mesh1:\n";
+    for (const auto& triangle : mesh1.triangles) {
+        for (const auto& point : triangle.points) {
+            outfile << point.x << ", " << point.y << ", " << point.z << "\n";
+        }
+    }
+
+    // Write mesh2
+    outfile << "mesh2:\n";
+    for (const auto& triangle : mesh2.triangles) {
+        for (const auto& point : triangle.points) {
+            outfile << point.x << ", " << point.y << ", " << point.z << "\n";
+        }
+    }
+
+    // Write boundary points
+    outfile << "boundary_points:\n";
+    for (const auto& point : boundary_points) {
+        outfile << point.x << ", " << point.y << ", " << point.z << "\n";
+    }
+
+    outfile.close();
+}
+
 inline void co_refinement(Mesh& mesh1, Mesh& mesh2, const std::string& output1, const std::string& output2) {
     // 检查输入网格是否是三角网格
     if (!CGAL::is_triangle_mesh(mesh1) || !CGAL::is_triangle_mesh(mesh2)) {

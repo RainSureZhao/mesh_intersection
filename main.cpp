@@ -48,28 +48,28 @@ namespace PMP = CGAL::Polygon_mesh_processing;
  * @return
  */
 
+
+
 int main(int argc, char* argv[]) {
-    const std::string filename1 = (argc > 1) ? argv[1] : R"(../data/Cone.ply)";
-    const std::string filename2 = (argc > 2) ? argv[2] : R"(../data/Plane.ply)";
-    const std::string output_filename1 = (argc > 3) ? argv[3] : R"(../data/Cone_refine.ply)";
-    const std::string output_filename2 = (argc > 4) ? argv[4] : R"(../data/Plane_refine.ply)";
-    // 读取第一个PLY文件
-    Mesh mesh1;
-    std::ifstream input1(filename1, std::ios::binary);
-    if (!input1 || !CGAL::IO::read_PLY(input1, mesh1)) {
-        std::cerr << "Cannot read file " << filename1 << std::endl;
-        return EXIT_FAILURE;
+    if (argc < 3) {
+        std::cerr << "Usage: " << argv[0] << " <input_file> <output_file>" << std::endl;
+        return 1;
     }
 
-    // 读取第二个PLY文件
-    Mesh mesh2;
-    std::ifstream input2(filename2, std::ios::binary);
-    if (!input2 || !CGAL::IO::read_PLY(input2, mesh2)) {
-        std::cerr << "Cannot read file " << filename2 << std::endl;
-        return EXIT_FAILURE;
+    std::string input_file = argv[1];
+    std::string output_file = argv[2];
+
+    // Read input mesh data
+    MeshData mesh1, mesh2;
+    if (!ReadMeshData(input_file, mesh1, mesh2)) {
+        return 1;
     }
 
-    co_refinement_and_clip(mesh1, mesh2, output_filename1, output_filename2);
+    // Perform mesh clipping
+    std::vector<Point3D> boundary_points = ClipMesh(mesh1.triangles, mesh2.triangles);
+
+    // Write output mesh data
+    WriteMeshData(output_file, mesh1, mesh2, boundary_points);
 
     return 0;
 }
