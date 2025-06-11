@@ -36,6 +36,15 @@ struct MeshData {
     std::vector<Triangle3D> triangles;
 };
 
+// 二进制文件头结构
+struct BinaryFileHeader {
+    char signature[8];    // 文件标识 "MESH_BIN"
+    int version;          // 版本号
+    int mesh1_triangle_count;
+    int mesh2_triangle_count;
+    int boundary_point_count;
+};
+
 bool ReadMeshData(const std::string& file_path, MeshData& mesh1, MeshData& mesh2) {
     std::ifstream infile(file_path);
     if (!infile.is_open()) {
@@ -93,7 +102,7 @@ void WriteMeshData(const std::string& file_path, const MeshData& mesh1, const Me
     outfile << "mesh1:\n";
     for (const auto& triangle : mesh1.triangles) {
         for (const auto& point : triangle.points) {
-            outfile << point.x << ", " << point.y << ", " << point.z << "\n";
+            outfile << point.x << " " << point.y << " " << point.z << "\n";
         }
     }
 
@@ -101,15 +110,82 @@ void WriteMeshData(const std::string& file_path, const MeshData& mesh1, const Me
     outfile << "mesh2:\n";
     for (const auto& triangle : mesh2.triangles) {
         for (const auto& point : triangle.points) {
-            outfile << point.x << ", " << point.y << ", " << point.z << "\n";
+            outfile << point.x << " " << point.y << " " << point.z << "\n";
         }
     }
 
     // Write boundary points
     outfile << "boundary_points:\n";
     for (const auto& point : boundary_points) {
-        outfile << point.x << ", " << point.y << ", " << point.z << "\n";
+        outfile << point.x << " " << point.y << " " << point.z << "\n";
     }
+
+    outfile.close();
+}
+
+// 读取二进制文件
+bool ReadMeshDataBinary(const std::string& file_path, MeshData& mesh1, MeshData& mesh2) {
+    std::ifstream infile(file_path, std::ios::binary);
+    if (!infile.is_open()) {
+        std::cerr << "Error: Unable to open input file " << file_path << std::endl;
+        return false;
+    }
+
+    // 读取文件头
+    BinaryFileHeader header;
+    infile.read(reinterpret_cast<char*>(&header), sizeof(header));
+
+    // 验证文件签名
+    if (std::memcmp(header.signature, "MESH_BIN", 8) != 0) {
+        std::cerr << "Error: Invalid file format" << std::endl;
+        return false;
+    }
+
+    // 读取 mesh1
+    mesh1.triangles.resize(header.mesh1_triangle_count);
+    infile.read(reinterpret_cast<char*>(mesh1.triangles.data()),
+                sizeof(Triangle3D) * header.mesh1_triangle_count);
+
+    // 读取 mesh2
+    mesh2.triangles.resize(header.mesh2_triangle_count);
+    infile.read(reinterpret_cast<char*>(mesh2.triangles.data()),
+                sizeof(Triangle3D) * header.mesh2_triangle_count);
+
+    infile.close();
+    return true;
+}
+
+// 写入二进制文件
+void WriteMeshDataBinary(const std::string& file_path, const MeshData& mesh1, const MeshData& mesh2,
+                   const std::vector<Point3D>& boundary_points) {
+    std::ofstream outfile(file_path, std::ios::binary);
+    if (!outfile.is_open()) {
+        std::cerr << "Error: Unable to open output file " << file_path << std::endl;
+        return;
+    }
+
+    // 准备文件头
+    BinaryFileHeader header;
+    std::memcpy(header.signature, "MESH_BIN", 8);
+    header.version = 1;
+    header.mesh1_triangle_count = mesh1.triangles.size();
+    header.mesh2_triangle_count = mesh2.triangles.size();
+    header.boundary_point_count = boundary_points.size();
+
+    // 写入文件头
+    outfile.write(reinterpret_cast<const char*>(&header), sizeof(header));
+
+    // 写入 mesh1
+    outfile.write(reinterpret_cast<const char*>(mesh1.triangles.data()),
+                  sizeof(Triangle3D) * mesh1.triangles.size());
+
+    // 写入 mesh2
+    outfile.write(reinterpret_cast<const char*>(mesh2.triangles.data()),
+                  sizeof(Triangle3D) * mesh2.triangles.size());
+
+    // 写入边界点
+    outfile.write(reinterpret_cast<const char*>(boundary_points.data()),
+                  sizeof(Point3D) * boundary_points.size());
 
     outfile.close();
 }
@@ -130,6 +206,14 @@ inline void co_refinement(Mesh& mesh1, Mesh& mesh2, const std::string& output1, 
 }
 
 inline std::vector<K::Point_3> co_refinement_and_clip(Mesh& mesh1, Mesh& mesh2, const std::string& output1 = "", const std::string& output2 = "") {
+    if(CGAL::Polygon_mesh_processing::does_self_intersect(mesh1)) {
+        std::cerr << "Error: Mesh1 self-intersects." << std::endl;
+        return {};
+    }
+    if(CGAL::Polygon_mesh_processing::does_self_intersect(mesh2)) {
+        std::cerr << "Error: Mesh2 self-intersects." << std::endl;
+        return {};
+    }
     // 进行共精细化操作
     PMP::corefine(mesh1, mesh2);
 
@@ -187,16 +271,38 @@ std::vector<Point3D> ClipMesh(std::vector<Triangle3D>& mesh1, std::vector<Triang
 {
     // 将原始三角形构造成CGAL::Surface_Mesh
     Mesh cgal_mesh1, cgal_mesh2;
+    // 将顶点去重后再加入到网格中
+    std::map<K::Point_3, Mesh::Vertex_index> unique_vertices1, unique_vertices2;
     for (const auto& triangle : mesh1) {
-        Mesh::Vertex_index v0 = cgal_mesh1.add_vertex(K::Point_3(triangle.points[0].x, triangle.points[0].y, triangle.points[0].z));
-        Mesh::Vertex_index v1 = cgal_mesh1.add_vertex(K::Point_3(triangle.points[1].x, triangle.points[1].y, triangle.points[1].z));
-        Mesh::Vertex_index v2 = cgal_mesh1.add_vertex(K::Point_3(triangle.points[2].x, triangle.points[2].y, triangle.points[2].z));
+        for (const auto& point : triangle.points) {
+            if (unique_vertices1.find(K::Point_3(point.x, point.y, point.z)) == unique_vertices1.end()) {
+                unique_vertices1[K::Point_3(point.x, point.y, point.z)] = cgal_mesh1.add_vertex(K::Point_3(point.x, point.y, point.z));
+            }
+        }
+    }
+    for (const auto& triangle : mesh2) {
+        for (const auto& point : triangle.points) {
+            if (unique_vertices2.find(K::Point_3(point.x, point.y, point.z)) == unique_vertices2.end()) {
+                unique_vertices2[K::Point_3(point.x, point.y, point.z)] = cgal_mesh2.add_vertex(K::Point_3(point.x, point.y, point.z));
+            }
+        }
+    }
+    for (const auto& triangle : mesh1) {
+//        Mesh::Vertex_index v0 = cgal_mesh1.add_vertex(K::Point_3(triangle.points[0].x, triangle.points[0].y, triangle.points[0].z));
+//        Mesh::Vertex_index v1 = cgal_mesh1.add_vertex(K::Point_3(triangle.points[1].x, triangle.points[1].y, triangle.points[1].z));
+//        Mesh::Vertex_index v2 = cgal_mesh1.add_vertex(K::Point_3(triangle.points[2].x, triangle.points[2].y, triangle.points[2].z));
+        Mesh::Vertex_index v0 = unique_vertices1[K::Point_3(triangle.points[0].x, triangle.points[0].y, triangle.points[0].z)];
+        Mesh::Vertex_index v1 = unique_vertices1[K::Point_3(triangle.points[1].x, triangle.points[1].y, triangle.points[1].z)];
+        Mesh::Vertex_index v2 = unique_vertices1[K::Point_3(triangle.points[2].x, triangle.points[2].y, triangle.points[2].z)];
         cgal_mesh1.add_face(v0, v1, v2);
     }
     for (const auto& triangle : mesh2) {
-        Mesh::Vertex_index v0 = cgal_mesh2.add_vertex(K::Point_3(triangle.points[0].x, triangle.points[0].y, triangle.points[0].z));
-        Mesh::Vertex_index v1 = cgal_mesh2.add_vertex(K::Point_3(triangle.points[1].x, triangle.points[1].y, triangle.points[1].z));
-        Mesh::Vertex_index v2 = cgal_mesh2.add_vertex(K::Point_3(triangle.points[2].x, triangle.points[2].y, triangle.points[2].z));
+//        Mesh::Vertex_index v0 = cgal_mesh2.add_vertex(K::Point_3(triangle.points[0].x, triangle.points[0].y, triangle.points[0].z));
+//        Mesh::Vertex_index v1 = cgal_mesh2.add_vertex(K::Point_3(triangle.points[1].x, triangle.points[1].y, triangle.points[1].z));
+//        Mesh::Vertex_index v2 = cgal_mesh2.add_vertex(K::Point_3(triangle.points[2].x, triangle.points[2].y, triangle.points[2].z));
+        Mesh::Vertex_index v0 = unique_vertices2[K::Point_3(triangle.points[0].x, triangle.points[0].y, triangle.points[0].z)];
+        Mesh::Vertex_index v1 = unique_vertices2[K::Point_3(triangle.points[1].x, triangle.points[1].y, triangle.points[1].z)];
+        Mesh::Vertex_index v2 = unique_vertices2[K::Point_3(triangle.points[2].x, triangle.points[2].y, triangle.points[2].z)];
         cgal_mesh2.add_face(v0, v1, v2);
     }
 

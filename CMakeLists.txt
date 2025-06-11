@@ -22,7 +22,7 @@ else()
     add_compile_options(-Wa,-mbig-obj)
 endif()
 
-find_package(CGAL REQUIRED OPTIONAL_COMPONENTS Qt5)
+find_package(CGAL REQUIRED OPTIONAL_COMPONENTS Qt6)
 
 
 file(GLOB EXAMPLES "include/examples/*.h")
